@@ -40,4 +40,22 @@ export async function applyPostgresSchema(): Promise<void> {
   await pool.query(`
     CREATE INDEX IF NOT EXISTS user_sessions_expires_at_idx ON user_sessions(expires_at);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_account_links (
+      id UUID PRIMARY KEY,
+      provider TEXT NOT NULL CHECK (provider IN ('openclaw','doubao')),
+      external_user_id TEXT NOT NULL,
+      local_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(provider, external_user_id),
+      UNIQUE(provider, local_user_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS user_account_links_local_user_idx
+    ON user_account_links(local_user_id);
+  `);
 }

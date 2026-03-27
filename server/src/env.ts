@@ -32,3 +32,41 @@ export function getPostgresConfig(): {
   const ssl = (process.env.POSTGRES_SSL ?? "false").toLowerCase() === "true";
   return { host, port, database, user, password, ssl };
 }
+
+export function getAiConfig(): {
+  provider: "openclaw" | "doubao";
+  baseUrl: string;
+  apiKey: string;
+  chatModel: string;
+  embedModel: string;
+} {
+  const rawProvider = (process.env.LLM_PROVIDER ?? "doubao").toLowerCase();
+  const provider = rawProvider === "openclaw" ? "openclaw" : "doubao";
+  const baseUrl =
+    process.env.LLM_BASE_URL ??
+    process.env.EMBEDDING_BASE_URL ??
+    "";
+  const apiKey =
+    process.env.LLM_API_KEY ??
+    process.env.OPENAI_API_KEY ??
+    process.env.DASHSCOPE_API_KEY ??
+    "";
+  const chatModel =
+    process.env.LLM_MODEL_CHAT ??
+    process.env.OPENAI_MODEL ??
+    "";
+  const embedModel =
+    process.env.LLM_MODEL_EMBED ??
+    process.env.EMBEDDING_MODEL ??
+    "";
+  return { provider, baseUrl, apiKey, chatModel, embedModel };
+}
+
+export function getChannelAuthConfig(): {
+  openclawSecret: string;
+  doubaoSecret: string;
+} {
+  const openclawSecret = process.env.CHANNEL_SIGN_SECRET_OPENCLAW ?? "";
+  const doubaoSecret = process.env.CHANNEL_SIGN_SECRET_DOUBAO ?? "";
+  return { openclawSecret, doubaoSecret };
+}

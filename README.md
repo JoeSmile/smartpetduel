@@ -87,6 +87,11 @@ pnpm dev:server
 - `POST /auth/login`（`account`=邮箱或手机号，`password`）
 - `GET /auth/me`（Header: `Authorization: Bearer <sessionToken>`）
 - `POST /auth/logout`（Header: `Authorization: Bearer <sessionToken>`）
+- `POST /auth/refresh`（会话轮换；支持 Bearer 或 Cookie 模式）
+- `POST /auth/channel/link`（Header: `Authorization: Bearer <sessionToken>`；绑定 `provider + externalUserId`）
+- `POST /auth/channel/login`（通过 `provider + externalUserId` 获取本地会话）
+- `GET /ai/provider/health`（查看当前 AI Provider 健康状态）
+- `POST /ai/provider/chat`（Provider 统一 chat 占位接口）
 
 5) 启动前端（默认 `http://127.0.0.1:5173`，`/api` 代理后端）
 
@@ -97,6 +102,96 @@ pnpm dev:client
 ## 阶段状态
 
 见 [`docs/TASKS.md`](./docs/TASKS.md) 勾选状态。
+
+## AI Provider 接入（OpenClaw / 豆包）
+
+服务端已新增统一 Provider 抽象层：
+
+- `server/src/ai/providers/types.ts`：接口与通用类型
+- `server/src/ai/providers/openclawAdapter.ts`：OpenClaw 适配器（当前为占位实现）
+- `server/src/ai/providers/doubaoAdapter.ts`：豆包适配器（当前为占位实现）
+- `server/src/ai/providers/index.ts`：按环境变量选择当前 Provider
+
+环境变量（`server/.env`）：
+
+- `LLM_PROVIDER=openclaw|doubao`
+- `LLM_BASE_URL=...`
+- `LLM_API_KEY=...`
+- `LLM_MODEL_CHAT=...`
+- `LLM_MODEL_EMBED=...`
+
+说明：
+
+- 当前 `chat` 为占位实现，用于先打通 Provider 抽象与路由；
+- 后续可在各 adapter 内替换为真实 SDK/API 调用，无需改业务层。
+
+## 安全基线（当前实现）
+
+- 登录/注册限流（内存窗口限流，防止短时暴力尝试）
+- 密码 `scrypt` 哈希存储（不明文）
+- 会话支持 HttpOnly Cookie（`sp_session`）与 Bearer 双模式
+- CSRF 双提交校验：Cookie 模式下，对关键 POST（如 `logout`、`channel/link`、`refresh`）要求 `x-csrf-token`
+- 会话刷新接口：`POST /auth/refresh`（旧 token 失效，新 token 生效）
+- 渠道接口签名校验（`/auth/channel/link`、`/auth/channel/login`）
+
+### 渠道验签头（channel APIs）
+
+请求头需包含：
+- `x-channel-timestamp`：毫秒时间戳（5 分钟有效窗口）
+- `x-channel-nonce`：一次性随机串（窗口内不可复用）
+- `x-channel-signature`：`hex(hmac_sha256(secret, provider + "\n" + timestamp + "\n" + nonce + "\n" + rawBody))`
+
+配置项（`server/.env`）：
+- `CHANNEL_SIGN_SECRET_OPENCLAW`
+- `CHANNEL_SIGN_SECRET_DOUBAO`
+
+### 一键签名请求脚本（本地验证）
+
+脚本：`server/src/scripts/channel-sign-demo.ts`
+
+- 渠道登录（不需要 bearer）：
+
+```bash
+pnpm --filter @smartpet-duel/server channel:demo \
+  --action=login \
+  --provider=doubao \
+  --externalUserId=ext_001 \
+  --baseUrl=http://127.0.0.1:3000 \
+  --secret="$CHANNEL_SIGN_SECRET_DOUBAO"
+```
+
+- 渠道绑定（需要已登录用户 token）：
+
+```bash
+pnpm --filter @smartpet-duel/server channel:demo \
+  --action=link \
+  --provider=doubao \
+  --externalUserId=ext_001 \
+  --bearerToken=<sessionToken> \
+  --baseUrl=http://127.0.0.1:3000 \
+  --secret="$CHANNEL_SIGN_SECRET_DOUBAO"
+```
+
+> 也可不传 `--secret`，脚本会从环境变量读取：
+> `CHANNEL_SIGN_SECRET_OPENCLAW` / `CHANNEL_SIGN_SECRET_DOUBAO`
+
+### 渠道最小接入时序（可跑通）
+
+1. 网站用户先完成 `register/login`（拿到本地 `sessionToken`）
+2. 首次进入豆包/OpenClaw：渠道侧拿到稳定 `externalUserId`
+3. 渠道调用 `/auth/channel/link`（带 bearer + 渠道签名）完成绑定
+4. 后续再进同渠道：仅调用 `/auth/channel/login`（渠道签名）拿本地 `sessionToken`
+5. 客户端用该 token 请求游戏接口（匹配、战斗、回放、天梯）
+
+### 豆包 / OpenClaw 接入清单
+
+- [ ] 渠道可拿到稳定 `externalUserId`
+- [ ] 渠道保存 `provider`（`doubao` / `openclaw`）
+- [ ] 渠道配置签名密钥并安全存储（不要下发到前端）
+- [ ] 每次请求生成 `timestamp + nonce + signature`
+- [ ] 首次走 `channel/link`，后续走 `channel/login`
+- [ ] 登录成功后把本地 `sessionToken` 注入后续游戏 API 请求
+- [ ] 服务端已部署为渠道可访问 HTTPS 域名
 
 ## 当前改动总结（到本次对话）
 

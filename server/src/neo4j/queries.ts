@@ -1,4 +1,5 @@
 import { getNeo4jDriver } from "./driver.js";
+import { retryAsync } from "../utils/retry.js";
 
 export async function getPlayerPets(playerId: string): Promise<
   Array<{ id: string; name: string; attribute: string }>
@@ -75,4 +76,54 @@ export async function getCounterMultiplier(
   } finally {
     await session.close();
   }
+}
+
+export async function updateBattleProgressWithRetry(input: {
+  playerId: string;
+  petIds: string[];
+  pairBattles: Array<{ petAId: string; petBId: string; battles: number }>;
+  maxAttempts?: number;
+}): Promise<"ok" | "skipped"> {
+  const driver = getNeo4jDriver();
+  if (!driver) return "skipped";
+
+  await retryAsync(
+    async () => {
+      const session = driver.session();
+      try {
+        await session.executeWrite(async (tx) => {
+          await tx.run(
+            `
+            MERGE (pl:Player {id: $playerId})
+            WITH pl
+            UNWIND $petIds AS petId
+            MATCH (p:Pet {id: petId})
+            MERGE (pl)-[h:HAS]->(p)
+            ON CREATE SET h.battleCount = 0, h.level = 1
+            SET h.battleCount = coalesce(h.battleCount, 0) + 1,
+                h.level = toInteger(floor((coalesce(h.battleCount, 0) + 1) / 5.0)) + 1
+            `,
+            { playerId: input.playerId, petIds: input.petIds },
+          );
+
+          await tx.run(
+            `
+            UNWIND $pairBattles AS pb
+            MATCH (a:Pet {id: pb.petAId})
+            MATCH (b:Pet {id: pb.petBId})
+            MERGE (a)-[r:HAS_BOND]->(b)
+            ON CREATE SET r.battles = 0, r.level = 1
+            SET r.battles = coalesce(r.battles, 0) + pb.battles,
+                r.level = toInteger(floor((coalesce(r.battles, 0) + pb.battles) / 3.0)) + 1
+            `,
+            { pairBattles: input.pairBattles },
+          );
+        });
+      } finally {
+        await session.close();
+      }
+    },
+    { maxAttempts: input.maxAttempts ?? 3, delayMs: 120 },
+  );
+  return "ok";
 }

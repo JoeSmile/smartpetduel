@@ -89,3 +89,27 @@ export async function findUserByIdentity(
     createdAt: String(row.created_at),
   };
 }
+
+export async function findUserById(userId: string): Promise<StoredUser | null> {
+  const pool = getPostgresPool();
+  const res = await pool.query(
+    `
+    SELECT id, register_type, email, phone, nickname, password_hash, created_at
+    FROM users
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [userId],
+  );
+  if (!res.rows.length) return null;
+  const row = res.rows[0];
+  return {
+    id: row.id as string,
+    registerType: row.register_type as "email" | "phone",
+    email: (row.email as string | null) ?? null,
+    phone: (row.phone as string | null) ?? null,
+    nickname: (row.nickname as string | null) ?? null,
+    passwordHash: row.password_hash as string,
+    createdAt: String(row.created_at),
+  };
+}
