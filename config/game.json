@@ -1,0 +1,77 @@
+{
+  "version": "2",
+  "gameTitle": "SmartPet Duel",
+  "pets": [
+    { "id": "PET_FIRE_01", "name": "炎绒狐", "attribute": "fire", "baseHp": 100, "baseAttack": 20 },
+    { "id": "PET_FIRE_02", "name": "烬甲兽", "attribute": "fire", "baseHp": 110, "baseAttack": 18 },
+    { "id": "PET_FIRE_03", "name": "炽焰狸", "attribute": "fire", "baseHp": 95, "baseAttack": 22 },
+    { "id": "PET_WATER_01", "name": "沧澜龟", "attribute": "water", "baseHp": 130, "baseAttack": 15 },
+    { "id": "PET_WATER_02", "name": "幽紫水母", "attribute": "water", "baseHp": 85, "baseAttack": 25 },
+    { "id": "PET_WATER_03", "name": "沧浪鲸", "attribute": "water", "baseHp": 140, "baseAttack": 18 },
+    { "id": "PET_GRASS_01", "name": "青芽龙", "attribute": "grass", "baseHp": 105, "baseAttack": 19 },
+    { "id": "PET_GRASS_02", "name": "叶绒鹿", "attribute": "grass", "baseHp": 100, "baseAttack": 20 },
+    { "id": "PET_GRASS_03", "name": "木叶精灵", "attribute": "grass", "baseHp": 90, "baseAttack": 23 },
+    { "id": "PET_SPECIAL_01", "name": "闪光电伊", "attribute": "electric", "baseHp": 90, "baseAttack": 25 },
+    { "id": "PET_SPECIAL_02", "name": "星甲兽", "attribute": "light", "baseHp": 120, "baseAttack": 22 },
+    { "id": "PET_SPECIAL_03", "name": "云纹灵猫", "attribute": "spirit", "baseHp": 95, "baseAttack": 24 }
+  ],
+  "attributes": [
+    { "id": "ATTR_FIRE", "name": "fire" },
+    { "id": "ATTR_WATER", "name": "water" },
+    { "id": "ATTR_GRASS", "name": "grass" },
+    { "id": "ATTR_ELECTRIC", "name": "electric" },
+    { "id": "ATTR_LIGHT", "name": "light" },
+    { "id": "ATTR_SPIRIT", "name": "spirit" }
+  ],
+  "counters": [
+    { "from": "fire", "to": "grass", "multiplier": 1.5 },
+    { "from": "grass", "to": "water", "multiplier": 1.5 },
+    { "from": "water", "to": "fire", "multiplier": 1.5 },
+    { "from": "electric", "to": "water", "multiplier": 2.0 },
+    { "from": "light", "to": "electric", "multiplier": 1.2 },
+    { "from": "light", "to": "spirit", "multiplier": 1.2 },
+    { "from": "spirit", "to": "light", "multiplier": 1.2 },
+    { "from": "spirit", "to": "electric", "multiplier": 1.2 }
+  ],
+  "skills": [
+    { "id": "SKILL_FIRE_01_A", "petId": "PET_FIRE_01", "name": "火球", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_FIRE_01_B", "petId": "PET_FIRE_01", "name": "灼烧", "type": "damage_dot", "coefficient": 0.8 },
+    { "id": "SKILL_FIRE_02_A", "petId": "PET_FIRE_02", "name": "撞击", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_FIRE_02_B", "petId": "PET_FIRE_02", "name": "火焰铠甲", "type": "shield", "coefficient": 0 },
+    { "id": "SKILL_FIRE_03_A", "petId": "PET_FIRE_03", "name": "火焰爪", "type": "damage", "coefficient": 1.1 },
+    { "id": "SKILL_FIRE_03_B", "petId": "PET_FIRE_03", "name": "高速突袭", "type": "damage", "coefficient": 0.9 },
+    { "id": "SKILL_WATER_01_A", "petId": "PET_WATER_01", "name": "水浪", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_WATER_01_B", "petId": "PET_WATER_01", "name": "护盾", "type": "shield", "coefficient": 0 },
+    { "id": "SKILL_WATER_02_A", "petId": "PET_WATER_02", "name": "毒刺", "type": "damage_dot", "coefficient": 0.95 },
+    { "id": "SKILL_WATER_02_B", "petId": "PET_WATER_02", "name": "麻痹触须", "type": "control", "coefficient": 0.7 },
+    { "id": "SKILL_WATER_03_A", "petId": "PET_WATER_03", "name": "海啸", "type": "aoe_damage", "coefficient": 1.05 },
+    { "id": "SKILL_WATER_03_B", "petId": "PET_WATER_03", "name": "水流压制", "type": "debuff", "coefficient": 0 },
+    { "id": "SKILL_GRASS_01_A", "petId": "PET_GRASS_01", "name": "藤鞭", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_GRASS_01_B", "petId": "PET_GRASS_01", "name": "治愈", "type": "heal", "coefficient": 0 },
+    { "id": "SKILL_GRASS_02_A", "petId": "PET_GRASS_02", "name": "叶刃", "type": "damage", "coefficient": 1.15 },
+    { "id": "SKILL_GRASS_02_B", "petId": "PET_GRASS_02", "name": "闪避", "type": "evade", "coefficient": 0 },
+    { "id": "SKILL_GRASS_03_A", "petId": "PET_GRASS_03", "name": "木刃", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_GRASS_03_B", "petId": "PET_GRASS_03", "name": "光合作用", "type": "regen", "coefficient": 0 },
+    { "id": "SKILL_SPECIAL_01_A", "petId": "PET_SPECIAL_01", "name": "电击", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_SPECIAL_01_B", "petId": "PET_SPECIAL_01", "name": "高速闪避", "type": "evade", "coefficient": 0 },
+    { "id": "SKILL_SPECIAL_02_A", "petId": "PET_SPECIAL_02", "name": "星光冲击", "type": "damage", "coefficient": 1.05 },
+    { "id": "SKILL_SPECIAL_02_B", "petId": "PET_SPECIAL_02", "name": "防御强化", "type": "buff", "coefficient": 0 },
+    { "id": "SKILL_SPECIAL_03_A", "petId": "PET_SPECIAL_03", "name": "幻影冲击", "type": "damage", "coefficient": 1.0 },
+    { "id": "SKILL_SPECIAL_03_B", "petId": "PET_SPECIAL_03", "name": "命运闪避", "type": "evade", "coefficient": 0 }
+  ],
+  "comboSkills": [
+    { "id": "COMBO_FIRE_01", "petAId": "PET_FIRE_01", "petBId": "PET_FIRE_02", "name": "火焰旋风", "coefficient": 1.8, "isAoe": true },
+    { "id": "COMBO_FIRE_SPIRIT_01", "petAId": "PET_FIRE_03", "petBId": "PET_SPECIAL_03", "name": "火炎爆发", "coefficient": 2.2, "isAoe": false },
+    { "id": "COMBO_WATER_01", "petAId": "PET_WATER_01", "petBId": "PET_WATER_03", "name": "沧澜守护", "coefficient": 0, "isAoe": false },
+    { "id": "COMBO_WATER_GRASS_01A", "petAId": "PET_WATER_02", "petBId": "PET_GRASS_02", "name": "剧毒水流", "coefficient": 1.6, "isAoe": false },
+    { "id": "COMBO_WATER_GRASS_01B", "petAId": "PET_GRASS_02", "petBId": "PET_WATER_02", "name": "疾风叶刃", "coefficient": 2.3, "isAoe": false },
+    { "id": "COMBO_GRASS_01", "petAId": "PET_GRASS_01", "petBId": "PET_GRASS_03", "name": "森林守护", "coefficient": 0, "isAoe": false },
+    { "id": "COMBO_LIGHTNING_01", "petAId": "PET_SPECIAL_01", "petBId": "PET_SPECIAL_02", "name": "雷霆风暴", "coefficient": 1.7, "isAoe": true }
+  ],
+  "unlockLinks": [
+    { "fromPetId": "PET_FIRE_01", "toPetId": "PET_FIRE_02" },
+    { "fromPetId": "PET_WATER_01", "toPetId": "PET_WATER_03" },
+    { "fromPetId": "PET_GRASS_01", "toPetId": "PET_GRASS_03" },
+    { "fromPetId": "PET_SPECIAL_01", "toPetId": "PET_SPECIAL_02" }
+  ]
+}

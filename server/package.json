@@ -1,0 +1,30 @@
+{
+  "name": "@smartpet-duel/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "neo4j:setup": "node --import tsx src/scripts/neo4j-setup.ts",
+    "postgres:setup": "node --import tsx src/scripts/postgres-setup.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.9",
+    "@langchain/community": "^1.1.25",
+    "@langchain/core": "^1.1.36",
+    "@langchain/langgraph": "^1.2.5",
+    "dotenv": "^17.3.1",
+    "hono": "^4.12.9",
+    "langchain": "^1.2.0",
+    "neo4j-driver": "^6.0.1",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
