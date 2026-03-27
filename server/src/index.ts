@@ -35,6 +35,20 @@ import {
   chatWithActiveProvider,
   getAiProviderHealth,
 } from "./ai/providers/index.js";
+import {
+  createBattleState,
+  type BattleAction,
+  type BattleState,
+} from "./game/engine.js";
+import { listLegalActions } from "./ai/battle/legalActions.js";
+import { decideBattleAiAction } from "./ai/battle/langgraphAgent.js";
+import {
+  createBattleSession,
+  getBattleSession,
+  kickAiIfNeeded,
+  submitBattleAction,
+} from "./battle/sessionService.js";
+import type { SideController } from "./battle/sessionModel.js";
 
 const app = new Hono();
 
@@ -421,6 +435,139 @@ app.post("/ai/provider/chat", async (c) => {
       500,
     );
   }
+});
+
+app.post("/ai/battle/legal-actions", async (c) => {
+  const body = await c.req.json<{
+    state?: BattleState;
+    side?: "A" | "B";
+  }>();
+  if (!body.state || (body.side !== "A" && body.side !== "B")) {
+    return c.json({ ok: false, error: "state_and_side_required" }, 400);
+  }
+  const config = await loadGameConfig();
+  const legal = listLegalActions({
+    state: body.state,
+    config,
+    side: body.side,
+  });
+  return c.json({ ok: true, legalActions: legal });
+});
+
+app.post("/ai/battle/next-action", async (c) => {
+  const body = await c.req.json<{
+    state?: BattleState;
+    side?: "A" | "B";
+    difficulty?: "easy" | "medium" | "hard";
+  }>();
+  if (!body.state || (body.side !== "A" && body.side !== "B")) {
+    return c.json({ ok: false, error: "state_and_side_required" }, 400);
+  }
+  const difficulty = body.difficulty ?? "medium";
+  const config = await loadGameConfig();
+  const result = await decideBattleAiAction({
+    state: body.state,
+    config,
+    side: body.side,
+    difficulty,
+  });
+  return c.json({ ok: true, ...result });
+});
+
+app.get("/ai/battle/demo-state", async (c) => {
+  const config = await loadGameConfig();
+  const state = createBattleState({
+    config,
+    seed: "demo-seed-001",
+    teamA: ["PET_FIRE_01", "PET_FIRE_02", "PET_WATER_01"],
+    teamB: ["PET_GRASS_01", "PET_GRASS_02", "PET_SPECIAL_01"],
+    bondLevelBySide: {
+      A: { "PET_FIRE_01|PET_FIRE_02": 3 },
+      B: { "PET_GRASS_01|PET_GRASS_02": 2 },
+    },
+    normalSkillCooldownById: {
+      SKILL_FIRE_01_A: 1,
+      SKILL_GRASS_01_A: 1,
+    },
+  });
+  return c.json({ ok: true, state });
+});
+
+app.post("/battle/session/create", async (c) => {
+  const body = await c.req.json<{
+    teamA?: [string, string, string];
+    teamB?: [string, string, string];
+    controllers?: { A?: SideController; B?: SideController };
+    seed?: string;
+    ttlSec?: number;
+  }>();
+  if (
+    !body.teamA ||
+    !body.teamB ||
+    !body.controllers?.A ||
+    !body.controllers?.B
+  ) {
+    return c.json({ ok: false, error: "team_and_controllers_required" }, 400);
+  }
+  const config = await loadGameConfig();
+  const session = createBattleSession({
+    config,
+    teamA: body.teamA,
+    teamB: body.teamB,
+    controllers: { A: body.controllers.A, B: body.controllers.B },
+    seed: body.seed,
+    ttlSec: body.ttlSec,
+  });
+  await kickAiIfNeeded({ config, sessionId: session.sessionId });
+  const latest = await getBattleSession(session.sessionId);
+  return c.json({ ok: true, session: latest ?? session });
+});
+
+app.get("/battle/session/:sessionId", async (c) => {
+  const config = await loadGameConfig();
+  const sessionId = c.req.param("sessionId");
+  const touched = await kickAiIfNeeded({ config, sessionId });
+  if (!touched) {
+    return c.json({ ok: false, error: "session_not_found_or_expired" }, 404);
+  }
+  return c.json({ ok: true, session: touched });
+});
+
+app.post("/battle/session/submit", async (c) => {
+  const body = await c.req.json<{
+    sessionId?: string;
+    side?: "A" | "B";
+    action?: BattleAction;
+    expectedStateVersion?: number;
+    userId?: string;
+  }>();
+  if (
+    !body.sessionId ||
+    (body.side !== "A" && body.side !== "B") ||
+    !body.action ||
+    typeof body.expectedStateVersion !== "number"
+  ) {
+    return c.json({ ok: false, error: "invalid_submit_payload" }, 400);
+  }
+  const config = await loadGameConfig();
+  const result = await submitBattleAction({
+    config,
+    sessionId: body.sessionId,
+    side: body.side,
+    action: body.action,
+    expectedStateVersion: body.expectedStateVersion,
+    userId: body.userId,
+  });
+  if (!result.ok) {
+    const status =
+      result.code === "forbidden"
+        ? 403
+        : result.code === "finished" || result.code === "version_conflict"
+          ? 409
+          : 404;
+    return c.json({ ok: false, error: result.code }, status as 403 | 404 | 409);
+  }
+  return c.json({ ok: true, session: result.session });
 });
 
 app.get("/graph/player/:playerId/pets", async (c) => {

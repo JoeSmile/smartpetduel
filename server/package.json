@@ -11,7 +11,7 @@
     "postgres:setup": "node --import tsx src/scripts/postgres-setup.ts",
     "channel:demo": "node --import tsx src/scripts/channel-sign-demo.ts",
     "test:engine": "node --import tsx --test src/game/engine.test.ts",
-    "test:core": "node --import tsx --test src/game/engine.test.ts src/utils/retry.test.ts"
+    "test:core": "node --import tsx --test src/game/engine.test.ts src/utils/retry.test.ts src/ai/battle/legalActions.test.ts src/ai/battle/langgraphAgent.test.ts src/battle/sessionService.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",

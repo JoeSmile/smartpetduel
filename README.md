@@ -17,7 +17,7 @@ pnpm install
 | 路径 | 说明 |
 |------|------|
 | `server/` | Hono API、Neo4j、LangGraph |
-| `client/` | 纯文字 UI 占位（Vite；阶段五对接 API） |
+| `client/` | React + Vite 前端（当前为占位 UI；阶段五对接 API） |
 | `config/` | 本地 JSON 配置（如 `game.json`） |
 
 ## Neo4j（本地 / Docker）
@@ -92,8 +92,14 @@ pnpm dev:server
 - `POST /auth/channel/login`（通过 `provider + externalUserId` 获取本地会话）
 - `GET /ai/provider/health`（查看当前 AI Provider 健康状态）
 - `POST /ai/provider/chat`（Provider 统一 chat 占位接口）
+- `GET /ai/battle/demo-state`（返回一个可直接测试的对战状态样例）
+- `POST /ai/battle/legal-actions`（输入 `state + side`，返回服务端合法动作枚举）
+- `POST /ai/battle/next-action`（输入 `state + side + difficulty`，返回 LangGraph AI 决策动作）
+- `POST /battle/session/create`（创建统一会话；支持 `human|ai` 双侧控制）
+- `GET /battle/session/:sessionId`（拉取会话状态；用于断线重连）
+- `POST /battle/session/submit`（提交一侧动作；服务端串行结算 + 可自动补 AI 动作）
 
-5) 启动前端（默认 `http://127.0.0.1:5173`，`/api` 代理后端）
+5) 启动前端（React + Vite，默认 `http://127.0.0.1:5173`，`/api` 代理后端）
 
 ```bash
 pnpm dev:client
@@ -102,6 +108,30 @@ pnpm dev:client
 ## 阶段状态
 
 见 [`docs/TASKS.md`](./docs/TASKS.md) 勾选状态。
+
+## 统一对战模型（PVP / PVE / AIvAI）
+
+服务端将三种玩法统一到同一会话模型：
+
+- `pvp`：`human vs human`
+- `pve`：`human vs ai`（任一侧可为 AI）
+- `aivai`：`ai vs ai`（适合批量模拟与平衡测试）
+
+统一关键点：
+
+- 同一 `BattleSession`（`session_id`、`state_version`、`ttl`、`ruleset_id`）
+- 同一 `BattleState` 引擎结算（服务端权威）
+- 同一动作协议（`BattleAction`：`skill | combo | switch`）
+- 差异只在 `controllers.A/B.kind = human | ai`
+- 统一等待式会话 API：`create / submit / state(get)`
+
+代码骨架：
+
+- `server/src/battle/sessionModel.ts`
+  - `BattleSession`
+  - `SideController`
+  - `inferBattleMode()`
+  - `assertSideControlledByUser()`
 
 ## AI Provider 接入（OpenClaw / 豆包）
 
