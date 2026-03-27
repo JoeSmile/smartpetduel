@@ -8,8 +8,9 @@ function pairKey(a: string, b: string): string {
 export async function persistBattleProgress(input: {
   playerId: string;
   state: BattleState;
+  side?: "A" | "B";
 }): Promise<"ok" | "skipped"> {
-  const team = input.state.teamA;
+  const team = input.side === "B" ? input.state.teamB : input.state.teamA;
   const usedPetIds = team.roster.map((x) => x.petId);
   const pairBattlesMap = new Map<string, { petAId: string; petBId: string; battles: number }>();
   for (let i = 0; i < team.roster.length; i += 1) {

@@ -1,27 +1,34 @@
 import { getAiConfig } from "../../env.js";
-import { DoubaoAdapter } from "./doubaoAdapter.js";
-import { OpenClawAdapter } from "./openclawAdapter.js";
-import type { AiProvider, AiProviderName, ChatRequest, ChatResponse } from "./types.js";
+import { OpenAiCompatibleAdapter } from "./openaiCompatibleAdapter.js";
+import type {
+  AiProvider,
+  AiProviderName,
+  ChatRequest,
+  ChatResponse,
+  EmbedRequest,
+  EmbedResponse,
+} from "./types.js";
 
 export function createAiProvider(name: AiProviderName): AiProvider {
-  const cfg = getAiConfig();
-  if (name === "openclaw") {
-    return new OpenClawAdapter({
-      baseUrl: cfg.baseUrl,
-      apiKey: cfg.apiKey,
-      chatModel: cfg.chatModel,
-    });
+  if (name !== "openai_compatible") {
+    throw new Error(`unsupported_ai_provider:${name}`);
   }
-  return new DoubaoAdapter({
+  const cfg = getAiConfig();
+  return new OpenAiCompatibleAdapter({
     baseUrl: cfg.baseUrl,
     apiKey: cfg.apiKey,
     chatModel: cfg.chatModel,
+    embedModel: cfg.embedModel,
+    timeoutMs: cfg.timeoutMs,
+    fallbackBaseUrl: cfg.fallbackBaseUrl,
+    fallbackApiKey: cfg.fallbackApiKey,
+    fallbackChatModel: cfg.fallbackChatModel,
+    fallbackEmbedModel: cfg.fallbackEmbedModel,
   });
 }
 
 export function getActiveAiProvider(): AiProvider {
-  const cfg = getAiConfig();
-  return createAiProvider(cfg.provider);
+  return createAiProvider("openai_compatible");
 }
 
 export async function getAiProviderHealth(): Promise<{
@@ -38,5 +45,12 @@ export async function chatWithActiveProvider(
 ): Promise<ChatResponse> {
   const provider = getActiveAiProvider();
   return provider.chat(request);
+}
+
+export async function embedWithActiveProvider(
+  request: EmbedRequest,
+): Promise<EmbedResponse> {
+  const provider = getActiveAiProvider();
+  return provider.embed(request);
 }
 

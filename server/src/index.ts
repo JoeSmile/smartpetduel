@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { loadGameConfig } from "./config/loadGameConfig.js";
+import { getLlmConfigCenter } from "./env.js";
 import { verifyNeo4jConnectivity } from "./neo4j/driver.js";
 import {
   getBondBetweenPets,
@@ -35,13 +36,24 @@ import {
   chatWithActiveProvider,
   getAiProviderHealth,
 } from "./ai/providers/index.js";
+import { isAiProviderError } from "./ai/providers/errors.js";
+import {
+  querySimilarAdvice,
+  upsertAdviceDoc,
+} from "./ai/recommend/vectorAdvisor.js";
+import {
+  executeAllowlistIntent,
+  parseNlToAllowlistIntent,
+} from "./ai/nl/allowlistQuery.js";
 import {
   createBattleState,
   type BattleAction,
+  type BattleEvent,
   type BattleState,
 } from "./game/engine.js";
 import { listLegalActions } from "./ai/battle/legalActions.js";
 import { decideBattleAiAction } from "./ai/battle/langgraphAgent.js";
+import { generateBattleCommentary } from "./ai/commentary/battleCommentary.js";
 import {
   createBattleSession,
   getBattleSession,
@@ -412,6 +424,11 @@ app.get("/ai/provider/health", async (c) => {
   return c.json({ ok: true, ai });
 });
 
+app.get("/ai/provider/config", async (c) => {
+  const center = getLlmConfigCenter();
+  return c.json({ ok: true, config: center.publicView });
+});
+
 app.post("/ai/provider/chat", async (c) => {
   const body = await c.req.json<{
     messages?: Array<{ role: "system" | "user" | "assistant"; content: string }>;
@@ -430,11 +447,92 @@ app.post("/ai/provider/chat", async (c) => {
     });
     return c.json({ ok: true, result });
   } catch (err) {
+    if (isAiProviderError(err)) {
+      const status =
+        err.code === "not_configured"
+          ? 503
+          : err.code === "timeout"
+            ? 504
+            : err.code === "rate_limited"
+              ? 429
+              : err.code === "unauthorized"
+                ? 401
+                : 502;
+      return c.json(
+        { ok: false, error: "provider_chat_failed", code: err.code, detail: err.message },
+        status as 401 | 429 | 502 | 503 | 504,
+      );
+    }
     return c.json(
       { ok: false, error: "provider_chat_failed", detail: String(err) },
       500,
     );
   }
+});
+
+app.post("/ai/recommend/index", async (c) => {
+  const body = await c.req.json<{
+    id?: string;
+    type?: "lineup" | "battle_report";
+    text?: string;
+    metadata?: Record<string, string | number | boolean>;
+  }>();
+  if (!body.id || (body.type !== "lineup" && body.type !== "battle_report") || !body.text) {
+    return c.json({ ok: false, error: "id_type_text_required" }, 400);
+  }
+  await upsertAdviceDoc({
+    id: body.id,
+    type: body.type,
+    text: body.text,
+    metadata: body.metadata,
+  });
+  return c.json({ ok: true });
+});
+
+app.post("/ai/recommend/query", async (c) => {
+  const body = await c.req.json<{
+    queryText?: string;
+    type?: "lineup" | "battle_report";
+    topK?: number;
+  }>();
+  if (!body.queryText) {
+    return c.json({ ok: false, error: "query_text_required" }, 400);
+  }
+  const hits = await querySimilarAdvice({
+    queryText: body.queryText,
+    type: body.type,
+    topK: body.topK,
+  });
+  return c.json({
+    ok: true,
+    hits,
+    note: "advice_only_no_battle_numeric_override",
+  });
+});
+
+app.post("/ai/graph/nl-query", async (c) => {
+  const body = await c.req.json<{ query?: string }>();
+  const query = (body.query ?? "").trim();
+  if (!query) {
+    return c.json({ ok: false, error: "query_required" }, 400);
+  }
+  const intent = parseNlToAllowlistIntent(query);
+  if (!intent) {
+    return c.json(
+      {
+        ok: false,
+        error: "query_not_in_allowlist",
+        allowed: [
+          "player <playerId> pets",
+          "bond between <petAId> and <petBId>",
+          "counter <attackerAttr> vs <defenderAttr>",
+        ],
+      },
+      400,
+    );
+  }
+  const result = await executeAllowlistIntent(intent);
+  return c.json({ ok: true, intent, result, mode: "allowlist_template_only" });
 });
 
 app.post("/ai/battle/legal-actions", async (c) => {
@@ -472,6 +570,21 @@ app.post("/ai/battle/next-action", async (c) => {
     difficulty,
   });
   return c.json({ ok: true, ...result });
+});
+
+app.post("/ai/battle/commentary", async (c) => {
+  const body = await c.req.json<{
+    round?: number;
+    events?: BattleEvent[];
+  }>();
+  if (typeof body.round !== "number" || !Array.isArray(body.events)) {
+    return c.json({ ok: false, error: "round_and_events_required" }, 400);
+  }
+  const out = await generateBattleCommentary({
+    round: body.round,
+    events: body.events,
+  });
+  return c.json({ ok: true, ...out });
 });
 
 app.get("/ai/battle/demo-state", async (c) => {

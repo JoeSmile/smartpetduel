@@ -91,10 +91,13 @@ pnpm dev:server
 - `POST /auth/channel/link`（Header: `Authorization: Bearer <sessionToken>`；绑定 `provider + externalUserId`）
 - `POST /auth/channel/login`（通过 `provider + externalUserId` 获取本地会话）
 - `GET /ai/provider/health`（查看当前 AI Provider 健康状态）
+- `GET /ai/provider/config`（查看模型配置中心的脱敏状态与缺失项）
 - `POST /ai/provider/chat`（Provider 统一 chat 占位接口）
 - `GET /ai/battle/demo-state`（返回一个可直接测试的对战状态样例）
 - `POST /ai/battle/legal-actions`（输入 `state + side`，返回服务端合法动作枚举）
 - `POST /ai/battle/next-action`（输入 `state + side + difficulty`，返回 LangGraph AI 决策动作）
+- `POST /ai/battle/commentary`（输入 `round + events`，返回 1-2 句解说；失败自动模板降级）
+- `POST /ai/battle/commentary`（输入 `round + events`，返回 1-2 句解说；失败自动模板降级）
 - `POST /battle/session/create`（创建统一会话；支持 `human|ai` 双侧控制）
 - `GET /battle/session/:sessionId`（拉取会话状态；用于断线重连）
 - `POST /battle/session/submit`（提交一侧动作；服务端串行结算 + 可自动补 AI 动作）
@@ -133,27 +136,47 @@ pnpm dev:client
   - `inferBattleMode()`
   - `assertSideControlledByUser()`
 
-## AI Provider 接入（OpenClaw / 豆包）
+## AI Provider 接入（OpenAI-compatible）
 
 服务端已新增统一 Provider 抽象层：
 
 - `server/src/ai/providers/types.ts`：接口与通用类型
-- `server/src/ai/providers/openclawAdapter.ts`：OpenClaw 适配器（当前为占位实现）
-- `server/src/ai/providers/doubaoAdapter.ts`：豆包适配器（当前为占位实现）
+- `server/src/ai/providers/openaiCompatibleAdapter.ts`：OpenAI-compatible 适配器
 - `server/src/ai/providers/index.ts`：按环境变量选择当前 Provider
 
 环境变量（`server/.env`）：
 
-- `LLM_PROVIDER=openclaw|doubao`
+- `LLM_PROVIDER=openai_compatible`
 - `LLM_BASE_URL=...`
 - `LLM_API_KEY=...`
 - `LLM_MODEL_CHAT=...`
 - `LLM_MODEL_EMBED=...`
+- `LLM_TIMEOUT_MS=10000`
+- `LLM_FALLBACK_BASE_URL=...`
+- `LLM_FALLBACK_API_KEY=...`
+- `LLM_FALLBACK_MODEL_CHAT=...`
+- `LLM_FALLBACK_MODEL_EMBED=...`
 
 说明：
 
-- 当前 `chat` 为占位实现，用于先打通 Provider 抽象与路由；
-- 后续可在各 adapter 内替换为真实 SDK/API 调用，无需改业务层。
+- 当前基于 OpenAI-compatible 协议，`chat` 调用 `/chat/completions`，`embed` 调用 `/embeddings`；
+- 渠道入口（`doubao/openclaw`）仅用于登录鉴权，不作为 LLM provider 名称。
+- 默认走主配置；当主链路超时、429、5xx 或网络异常时，自动降级到 fallback 配置。
+- `GET /ai/provider/config` 仅返回脱敏配置视图（如 `hasApiKey` 与 `missing`），不会回传明文 key。
+- `POST /ai/provider/chat` 在失败时返回统一错误码：`not_configured|timeout|rate_limited|unauthorized|upstream_http_error|network_error|empty_content`。
+- 解说开关与上限：`COMMENTARY_ENABLED`、`COMMENTARY_MAX_TOKENS`。
+- 解说开关与上限：`COMMENTARY_ENABLED`、`COMMENTARY_MAX_TOKENS`。
+
+冒烟测试（真实调用 `chat + embed`）：
+
+```bash
+pnpm --filter @smartpet-duel/server llm:smoke
+```
+
+说明：
+
+- 若 LLM 未配置，脚本会输出 `skipped: true` 并退出成功；
+- 若已配置，脚本会同时校验 `chat` 和 `embed` 链路，任一失败则返回非 0。
 
 ## 安全基线（当前实现）
 

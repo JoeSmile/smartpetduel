@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { GameConfigJson } from "../config/loadGameConfig.js";
 import { resolveTurn, createBattleState, type BattleAction } from "../game/engine.js";
 import { CURRENT_RULESET_ID } from "../game/ruleset.js";
+import { persistBattleProgress } from "../game/progression.js";
 import {
   type BattleSession,
   type PlayerSide,
@@ -69,6 +70,38 @@ async function resolveOneTurnIfReady(
   }
 }
 
+async function persistProgressIfBattleEnded(session: BattleSession): Promise<void> {
+  if (!session.state.ended || session.progressPersistedAt) return;
+  try {
+    const jobs: Array<Promise<"ok" | "skipped">> = [];
+    if (session.controllers.A.kind === "human" && session.controllers.A.userId) {
+      jobs.push(
+        persistBattleProgress({
+          playerId: session.controllers.A.userId,
+          state: session.state,
+          side: "A",
+        }),
+      );
+    }
+    if (session.controllers.B.kind === "human" && session.controllers.B.userId) {
+      jobs.push(
+        persistBattleProgress({
+          playerId: session.controllers.B.userId,
+          state: session.state,
+          side: "B",
+        }),
+      );
+    }
+    if (jobs.length > 0) {
+      await Promise.all(jobs);
+    }
+    session.progressPersistedAt = nowIso();
+  } catch (err) {
+    // Do not block battle result readback on graph sync failure.
+    console.error("[battle] persist progress failed", err);
+  }
+}
+
 async function fillAiActionIfNeeded(
   session: BattleSession,
   config: GameConfigJson,
@@ -113,6 +146,7 @@ export function createBattleSession(input: {
     rulesetId: CURRENT_RULESET_ID,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    progressPersistedAt: null,
     stateVersion: 1,
     ttlSec: input.ttlSec ?? DEFAULT_TTL_SEC,
     status: "pending",
@@ -181,6 +215,7 @@ export async function submitBattleAction(input: {
     if (session.mode === "aivai" && !session.state.ended) {
       await autoRunAivai(session, input.config);
     }
+    await persistProgressIfBattleEnded(session);
     return { ok: true, session };
   });
 }
@@ -203,6 +238,7 @@ export async function kickAiIfNeeded(input: {
     if (session.mode === "aivai" && !session.state.ended) {
       await autoRunAivai(session, input.config);
     }
+    await persistProgressIfBattleEnded(session);
     return session;
   });
 }

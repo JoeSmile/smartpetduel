@@ -17,6 +17,7 @@ export type BattleSession = {
   rulesetId: string;
   createdAt: string;
   updatedAt: string;
+  progressPersistedAt: string | null;
   stateVersion: number;
   ttlSec: number;
   status: "pending" | "running" | "finished";

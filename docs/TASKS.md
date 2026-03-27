@@ -74,12 +74,12 @@
 - [ ] 将技能/合体数据导入图谱或 JSON，并与 `skill_id`/`combo_id` 一致（附录 A）
 - [x] Cypher 或模板服务：查询羁绊、合体技是否可用、阵容合法性（第八节 4 MVP）
 - [x] 服务端枚举 **合法动作**（技能/切换/合体）供 Planner 使用（附录 B.1）
-- [ ] 设计 **LLM Provider 抽象层**（统一 `chat/embed/health` 接口），避免业务层绑定单一供应商
-- [ ] 增加 Provider 适配器骨架：`openclawAdapter`、`doubaoAdapter`（先可用占位实现）
+- [x] 设计 **LLM Provider 抽象层**（统一 `chat/embed/health` 接口），避免业务层绑定单一供应商
+- [x] 增加 Provider 适配器骨架：`openaiCompatibleAdapter`（统一 OpenAI-compatible 协议）
 - [x] 实现 **LangGraph** 管线：**Analyst → Planner → Persona**（第十一节 2）
 - [x] 实现 **规则 AI fallback**（超时、非法输出、无 LLM；第十一节 2）
 - [x] 易 / 中 / 难三档与 Persona 映射（附录 B.2）
-- [ ] 固定种子下 **规则 AI 路径** 行为可复现（附录 B.2）
+- [x] 固定种子下 **规则 AI 路径** 行为可复现（附录 B.2）
 
 ---
 
@@ -87,15 +87,15 @@
 
 **对应 PRD**：第十三节 · 阶段四b；**第八节** 4 Phase 2；**第十一节** 3–5；**十五节** NFR 2
 
-- [ ] **方案 A**：向量库 + 战报/阵容 embedding（第十一节 3）；仅建议层，**不改数值**
-- [ ] **方案 B**：NL→预定义模板或 allowlist NL→Cypher；**禁止** 任意 Cypher 拼接（十五节 3）
-- [ ] 增加模型配置中心：`LLM_PROVIDER`、`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL_CHAT`、`LLM_MODEL_EMBED`
-- [ ] 支持主备模型切换策略（例如豆包主、OpenClaw备；超时/限流自动降级）
-- [ ] 解说员 LLM：基于结构化事件、1–2 句；**开关** + token 上限（十一节 4；十五节 2）
+- [x] **方案 A**：向量库 + 战报/阵容 embedding（第十一节 3）；仅建议层，**不改数值**
+- [x] **方案 B**：NL→预定义模板或 allowlist NL→Cypher；**禁止** 任意 Cypher 拼接（十五节 3）
+- [x] 增加模型配置中心：`LLM_PROVIDER`、`LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL_CHAT`、`LLM_MODEL_EMBED`
+- [x] 支持主备模型切换策略（同协议多模型主备；超时/限流自动降级）
+- [x] 解说员 LLM：基于结构化事件、1–2 句；**开关** + token 上限（十一节 4；十五节 2）
 - [ ] 内容侧 embedding：相似宠物/阵容解释（十一节 5）
-- [ ] 统一提示词输出协议（JSON Schema），确保不同供应商输出可被稳定解析
-- [ ] Provider 冒烟测试：OpenClaw/豆包分别验证 `chat` 与（如启用）`embed` 链路
-- [ ] OpenClaw 适配器从占位升级为真实 API 调用，并与豆包适配器统一错误码语义
+- [x] 统一提示词输出协议（JSON Schema），确保不同供应商输出可被稳定解析
+- [x] Provider 冒烟测试：OpenAI-compatible `chat` 与（如启用）`embed` 链路
+- [x] 适配器错误码语义统一（`chat`/`embed` 超时、限流、鉴权失败）
 - [ ] 验收：附录 B.3、B.4（allowlist、不编造数值）
 
 ---
@@ -160,7 +160,7 @@
 - [ ] **可观测性**：结构化对战日志；**LangGraph 决策轨迹** 可选调试开关（十五节 4）
 - [ ] **图谱写入失败**：重试与战后补偿策略（十五节 4）
 - [ ] **LLM**：Key 仅服务端；无网/限额时 fallback 与关闭解说（十五节 2）
-- [ ] **供应商兼容**：OpenClaw/豆包统一走 Provider 抽象层，禁止业务代码直连某家 SDK
+- [ ] **供应商兼容**：统一走 OpenAI-compatible Provider 抽象层，禁止业务代码直连某家 SDK
 - [ ] **配置治理**：不同供应商的 URL/Key/Model 全部走环境变量，不写死在代码
 - [ ] **多入口安全**：外部渠道回调/签名校验、防重放、防伪造 external_user_id
 - [ ] **账号体系**：Web 账号与渠道账号可合并/解绑策略（含冲突处理与审计日志）

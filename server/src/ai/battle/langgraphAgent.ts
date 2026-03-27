@@ -3,6 +3,10 @@ import type { GameConfigJson } from "../../config/loadGameConfig.js";
 import type { BattleAction, BattleState } from "../../game/engine.js";
 import { chatWithActiveProvider } from "../providers/index.js";
 import { listLegalActions, type LegalAction } from "./legalActions.js";
+import {
+  parsePlannerActionBySchema,
+  PLANNER_OUTPUT_JSON_SCHEMA,
+} from "./promptProtocol.js";
 
 export type Difficulty = "easy" | "medium" | "hard";
 type Side = "A" | "B";
@@ -56,20 +60,12 @@ function ruleFallback(state: PlannerState): LegalAction | null {
   return ordered[idx] ?? ordered[0];
 }
 
-function parsePlannedKey(raw: string): string {
-  try {
-    const j = JSON.parse(raw) as { actionKey?: string };
-    return j.actionKey ?? "";
-  } catch {
-    return "";
-  }
-}
-
 export async function decideBattleAiAction(input: {
   state: BattleState;
   config: GameConfigJson;
   side: Side;
   difficulty: Difficulty;
+  forceRuleFallback?: boolean;
 }): Promise<{
   action: BattleAction | null;
   reason: string;
@@ -92,6 +88,9 @@ export async function decideBattleAiAction(input: {
       if (!s.legalActions.length) {
         return { plannedActionKey: "", reason: "no_legal_actions" };
       }
+      if (input.forceRuleFallback) {
+        return { plannedActionKey: "", reason: "rule_only_mode" };
+      }
       try {
         const result = await chatWithActiveProvider({
           temperature: 0.2,
@@ -100,7 +99,9 @@ export async function decideBattleAiAction(input: {
             {
               role: "system",
               content:
-                "You are a battle action planner. Return strict JSON: {\"actionKey\":\"...\"}. Choose only from provided legal action keys.",
+                `You are a battle action planner. Return strict JSON matching this schema: ${JSON.stringify(
+                  PLANNER_OUTPUT_JSON_SCHEMA,
+                )}. Choose only from provided legal action keys.`,
             },
             {
               role: "user",
@@ -112,7 +113,10 @@ export async function decideBattleAiAction(input: {
             },
           ],
         });
-        const actionKey = parsePlannedKey(result.content);
+        const actionKey = parsePlannerActionBySchema({
+          raw: result.content,
+          allowedActionKeys: s.legalActions.map((x) => x.key),
+        });
         return { plannedActionKey: actionKey, reason: "llm_planner" };
       } catch {
         return { plannedActionKey: "", reason: "llm_unavailable" };

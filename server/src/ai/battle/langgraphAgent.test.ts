@@ -25,3 +25,36 @@ test("langgraph agent returns legal action with fallback", async () => {
   assert.ok(result.action, "should pick one legal action");
 });
 
+test("rule fallback path is deterministic with fixed seed", async () => {
+  const config = await loadGameConfig();
+  const state = createBattleState({
+    config,
+    seed: "agent-rule-seed",
+    teamA: ["PET_FIRE_01", "PET_FIRE_02", "PET_WATER_01"],
+    teamB: ["PET_GRASS_01", "PET_GRASS_02", "PET_SPECIAL_01"],
+    bondLevelBySide: {
+      A: { "PET_FIRE_01|PET_FIRE_02": 3 },
+    },
+  });
+
+  const first = await decideBattleAiAction({
+    state,
+    config,
+    side: "A",
+    difficulty: "medium",
+    forceRuleFallback: true,
+  });
+  const second = await decideBattleAiAction({
+    state,
+    config,
+    side: "A",
+    difficulty: "medium",
+    forceRuleFallback: true,
+  });
+
+  assert.equal(first.fallbackUsed, true);
+  assert.equal(second.fallbackUsed, true);
+  assert.deepEqual(first.action, second.action);
+  assert.equal(first.reason, second.reason);
+});
+
