@@ -2,6 +2,24 @@ import { getCommentaryConfig } from "../../env.js";
 import type { BattleEvent } from "../../game/engine.js";
 import { chatWithActiveProvider } from "../providers/index.js";
 
+/** Appendix B.4: commentary must not invent integers absent from the grounded context. */
+function allowedIntegersFromGrounding(round: number, events: BattleEvent[]): Set<number> {
+  const blob = JSON.stringify({ round, events });
+  const s = new Set<number>();
+  for (const m of blob.matchAll(/\d+/g)) {
+    s.add(parseInt(m[0], 10));
+  }
+  return s;
+}
+
+function commentaryViolatesNumericGrounding(text: string, allowed: Set<number>): boolean {
+  for (const m of text.matchAll(/\d+/g)) {
+    const n = parseInt(m[0], 10);
+    if (!allowed.has(n)) return true;
+  }
+  return false;
+}
+
 function buildTemplateCommentary(events: BattleEvent[]): string {
   const damages = events.filter((e): e is Extract<BattleEvent, { type: "damage" }> => e.type === "damage");
   const kos = events.filter((e): e is Extract<BattleEvent, { type: "ko" }> => e.type === "ko");
@@ -49,6 +67,7 @@ export async function generateBattleCommentary(input: {
   const conciseEvents = input.events
     .filter((e) => e.type === "damage" || e.type === "ko" || e.type === "switch")
     .slice(-12);
+  const numericAllowlist = allowedIntegersFromGrounding(input.round, conciseEvents);
   try {
     const out = await llm({
       temperature: 0.3,
@@ -70,6 +89,9 @@ export async function generateBattleCommentary(input: {
     });
     const text = out.content.trim();
     if (!text) throw new Error("empty_commentary");
+    if (commentaryViolatesNumericGrounding(text, numericAllowlist)) {
+      throw new Error("commentary_numeric_grounding_failed");
+    }
     return { enabled: true, commentary: text, fallbackUsed: false };
   } catch {
     return {

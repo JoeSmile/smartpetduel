@@ -84,7 +84,7 @@ pnpm dev:server
 - `GET /graph/bond/:petAId/:petBId`
 - `GET /graph/counter/:attacker/:defender`
 - `POST /auth/register`（`account`=邮箱或手机号，`password`>=6，`nickname`可选）
-- `POST /auth/login`（`account`=邮箱或手机号，`password`）
+- `POST /auth/login`（`account`=邮箱或手机号，无需密码；若用户不存在则自动注册并登录）
 - `GET /auth/me`（Header: `Authorization: Bearer <sessionToken>`）
 - `POST /auth/logout`（Header: `Authorization: Bearer <sessionToken>`）
 - `POST /auth/refresh`（会话轮换；支持 Bearer 或 Cookie 模式）
@@ -101,6 +101,19 @@ pnpm dev:server
 - `POST /battle/session/create`（创建统一会话；支持 `human|ai` 双侧控制）
 - `GET /battle/session/:sessionId`（拉取会话状态；用于断线重连）
 - `POST /battle/session/submit`（提交一侧动作；服务端串行结算 + 可自动补 AI 动作）
+
+**Skill 接入层**（稳定前缀，与根 API 语义一致；默认开启，`SKILL_LAYER_ENABLED=false` 可关闭）：
+
+- `GET /skill/v1`：返回 JSON 发现文档（路径列表与鉴权说明）
+- 例：`POST /skill/v1/auth/login`、`GET /skill/v1/me`、`POST /skill/v1/battle/session/create` …（路径 = `/skill/v1` + 原相对路径）
+- 鉴权：`Authorization: Bearer <sessionToken>`（与 `POST /auth/login` 返回的 `sessionToken` 相同）
+
+```bash
+curl -sS http://127.0.0.1:3000/skill/v1 | head
+curl -sS -X POST http://127.0.0.1:3000/skill/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"account":"user@example.com"}'
+```
 
 5) 启动前端（React + Vite，默认 `http://127.0.0.1:5173`，`/api` 代理后端）
 
@@ -270,10 +283,10 @@ pnpm --filter @smartpet-duel/server channel:demo \
 
 - 已接入 Postgres，注册信息落库到 `users` 表（邮箱/手机号二选一，格式校验，不做真实性校验）
 - 已提供：
-  - `POST /auth/register`
-  - `POST /auth/login`
+  - `POST /auth/register`（仍要求密码长度等，供显式注册场景）
+  - `POST /auth/login`（仅需 `account`，不校验密码；首次登录会自动创建用户，服务端为其生成随机密码哈希占位）
 - 密码采用 `scrypt` 哈希存储，不明文落库
-- 唯一冲突返回 `identifier_exists`，凭证错误返回 `invalid_credentials`
+- 唯一冲突返回 `identifier_exists`；登录仅校验账号格式与是否存在（或自动创建）
 
 ### 4) 会话体系（最小可用）
 

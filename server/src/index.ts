@@ -4,16 +4,18 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { loadGameConfig } from "./config/loadGameConfig.js";
-import { getLlmConfigCenter } from "./env.js";
+import { getLlmConfigCenter, isSkillLayerEnabled } from "./env.js";
 import { verifyNeo4jConnectivity } from "./neo4j/driver.js";
 import {
   getBondBetweenPets,
   getCounterMultiplier,
+  getLadderLeaderboard,
+  getPlayerLadderRank,
   getPlayerPets,
 } from "./neo4j/queries.js";
 import { verifyPostgresConnectivity } from "./postgres/driver.js";
 import { parseRegisterIdentity } from "./auth/validators.js";
-import { hashPassword, verifyPassword } from "./auth/password.js";
+import { hashPassword } from "./auth/password.js";
 import {
   createUser,
   findUserByIdentity,
@@ -38,7 +40,10 @@ import {
 } from "./ai/providers/index.js";
 import { isAiProviderError } from "./ai/providers/errors.js";
 import {
+  explainLineupRecommendation,
+  indexPetCatalogFromConfig,
   querySimilarAdvice,
+  querySimilarPets,
   upsertAdviceDoc,
 } from "./ai/recommend/vectorAdvisor.js";
 import {
@@ -56,13 +61,27 @@ import { decideBattleAiAction } from "./ai/battle/langgraphAgent.js";
 import { generateBattleCommentary } from "./ai/commentary/battleCommentary.js";
 import {
   createBattleSession,
+  createPvpLobbySession,
   getBattleSession,
   kickAiIfNeeded,
+  resetPvpSessionToLobby,
+  setPvpLineup,
+  setPvpReady,
+  startPvpBattle,
   submitBattleAction,
 } from "./battle/sessionService.js";
-import type { SideController } from "./battle/sessionModel.js";
+import {
+  inferBattleMode,
+  type ClientChannel,
+  type SideController,
+} from "./battle/sessionModel.js";
+import { createSkillApp } from "./skill/skillApp.js";
 
 const app = new Hono();
+
+if (isSkillLayerEnabled()) {
+  app.route("/skill/v1", createSkillApp());
+}
 
 function readBearerToken(
   authHeader: string | undefined,
@@ -83,6 +102,14 @@ function resolveAuth(c: { req: { header: (k: string) => string | undefined } }):
   const cookieToken = getCookie(c as never, "sp_session");
   if (cookieToken) return { ok: true, token: cookieToken, via: "cookie" };
   return { ok: false };
+}
+
+async function optionalSessionUser(c: {
+  req: { header: (k: string) => string | undefined };
+}): Promise<Awaited<ReturnType<typeof findSessionUserByToken>>> {
+  const parsed = resolveAuth(c);
+  if (!parsed.ok) return null;
+  return findSessionUserByToken(parsed.token);
 }
 
 function getClientIp(c: { req: { header: (k: string) => string | undefined } }): string {
@@ -192,7 +219,6 @@ app.post("/auth/register", async (c) => {
 app.post("/auth/login", async (c) => {
   const body = await c.req.json<{ account?: string; password?: string }>();
   const account = (body.account ?? "").trim();
-  const password = body.password ?? "";
   const loginLimit = hitRateLimit(`login:${getClientIp(c)}:${account}`, {
     max: 10,
     windowMs: 60_000,
@@ -205,26 +231,37 @@ app.post("/auth/login", async (c) => {
   if (!account) {
     return c.json({ ok: false, error: "account_required" }, 400);
   }
-  if (!password) {
-    return c.json({ ok: false, error: "password_required" }, 400);
-  }
 
   const identity = parseRegisterIdentity(account);
   if (!identity) {
     return c.json({ ok: false, error: "invalid_email_or_phone_format" }, 400);
   }
 
-  const user = await findUserByIdentity(
+  const identityQuery =
     identity.registerType === "email"
-      ? { registerType: "email", email: identity.email }
-      : { registerType: "phone", phone: identity.phone },
-  );
+      ? { registerType: "email" as const, email: identity.email }
+      : { registerType: "phone" as const, phone: identity.phone };
+
+  let user = await findUserByIdentity(identityQuery);
   if (!user) {
-    return c.json({ ok: false, error: "invalid_credentials" }, 401);
+    const passwordHash = await hashPassword(randomBytes(32).toString("hex"));
+    const created = await createUser({
+      registerType: identity.registerType,
+      email: identity.registerType === "email" ? identity.email : null,
+      phone: identity.registerType === "phone" ? identity.phone : null,
+      passwordHash,
+      nickname: null,
+    });
+    if (created.ok) {
+      user = await findUserById(created.user.id);
+    } else if (created.reason === "identifier_exists") {
+      user = await findUserByIdentity(identityQuery);
+    } else {
+      return c.json({ ok: false, error: "account_create_failed" }, 500);
+    }
   }
 
-  const passed = await verifyPassword(password, user.passwordHash);
-  if (!passed) {
+  if (!user) {
     return c.json({ ok: false, error: "invalid_credentials" }, 401);
   }
 
@@ -510,6 +547,50 @@ app.post("/ai/recommend/query", async (c) => {
   });
 });
 
+app.post("/ai/recommend/pets/index-catalog", async (c) => {
+  const config = await loadGameConfig();
+  await indexPetCatalogFromConfig(config);
+  return c.json({ ok: true, indexed: config.pets.length, version: config.version });
+});
+
+app.post("/ai/recommend/pets/similar", async (c) => {
+  const body = await c.req.json<{
+    petId?: string;
+    queryText?: string;
+    topK?: number;
+  }>();
+  if (!body.petId && !(body.queryText ?? "").trim()) {
+    return c.json({ ok: false, error: "pet_id_or_query_text_required" }, 400);
+  }
+  const config = await loadGameConfig();
+  const hits = await querySimilarPets({
+    petId: body.petId,
+    queryText: body.queryText,
+    config,
+    topK: body.topK,
+  });
+  return c.json({
+    ok: true,
+    hits,
+    note: "content_embedding_similar_pets_only",
+  });
+});
+
+app.post("/ai/recommend/lineup/explain", async (c) => {
+  const body = await c.req.json<{ petIds?: string[]; topK?: number }>();
+  const petIds = body.petIds ?? [];
+  if (!Array.isArray(petIds) || petIds.length === 0) {
+    return c.json({ ok: false, error: "pet_ids_required" }, 400);
+  }
+  const config = await loadGameConfig();
+  const out = await explainLineupRecommendation({
+    petIds,
+    config,
+    topK: body.topK,
+  });
+  return c.json({ ok: true, ...out });
+});
+
 app.post("/ai/graph/nl-query", async (c) => {
   const body = await c.req.json<{ query?: string }>();
   const query = (body.query ?? "").trim();
@@ -607,33 +688,241 @@ app.get("/ai/battle/demo-state", async (c) => {
 });
 
 app.post("/battle/session/create", async (c) => {
+  const user = await optionalSessionUser(c);
   const body = await c.req.json<{
     teamA?: [string, string, string];
     teamB?: [string, string, string];
     controllers?: { A?: SideController; B?: SideController };
     seed?: string;
     ttlSec?: number;
+    humanTurnTimeoutSec?: number;
+    clientChannel?: ClientChannel;
   }>();
-  if (
-    !body.teamA ||
-    !body.teamB ||
-    !body.controllers?.A ||
-    !body.controllers?.B
-  ) {
+  if (!body.controllers?.A || !body.controllers?.B) {
+    return c.json({ ok: false, error: "controllers_required" }, 400);
+  }
+  const chRaw = (c.req.header("x-client-channel") ?? "").toLowerCase();
+  const clientChannel: ClientChannel =
+    body.clientChannel ??
+    (chRaw === "openclaw" || chRaw === "doubao" || chRaw === "web"
+      ? chRaw
+      : "web");
+
+  const controllers: { A: SideController; B: SideController } = {
+    A: { ...body.controllers.A },
+    B: { ...body.controllers.B },
+  };
+  const mode = inferBattleMode(controllers);
+  if (mode === "pvp") {
+    if (!user) {
+      return c.json({ ok: false, error: "pvp_login_required" }, 401);
+    }
+    const ua = controllers.A.kind === "human" ? controllers.A.userId : null;
+    const ub = controllers.B.kind === "human" ? controllers.B.userId : null;
+    if (!ua || !ub || ua === ub) {
+      return c.json({ ok: false, error: "pvp_distinct_user_ids_required" }, 400);
+    }
+    if (user.id !== ua && user.id !== ub) {
+      return c.json({ ok: false, error: "pvp_creator_not_participant" }, 403);
+    }
+    try {
+      const [rowA, rowB] = await Promise.all([findUserById(ua), findUserById(ub)]);
+      if (!rowA || !rowB) {
+        return c.json({ ok: false, error: "pvp_user_not_found" }, 404);
+      }
+    } catch (err) {
+      console.error("[battle] pvp user lookup", err);
+      return c.json({ ok: false, error: "pvp_user_lookup_failed" }, 503);
+    }
+    controllers.A = { kind: "human", userId: ua };
+    controllers.B = { kind: "human", userId: ub };
+
+    const config = await loadGameConfig();
+    const session = createPvpLobbySession({
+      config,
+      controllers,
+      ttlSec: body.ttlSec,
+      humanTurnTimeoutSec: body.humanTurnTimeoutSec,
+      clientChannel,
+    });
+    const latest = await getBattleSession(session.sessionId);
+    return c.json({ ok: true, session: latest ?? session });
+  }
+
+  if (!body.teamA || !body.teamB) {
     return c.json({ ok: false, error: "team_and_controllers_required" }, 400);
   }
+
+  for (const side of ["A", "B"] as const) {
+    const ctrl = controllers[side];
+    if (ctrl.kind === "human") {
+      if (user) {
+        if (ctrl.userId && ctrl.userId !== user.id) {
+          return c.json({ ok: false, error: "human_user_mismatch" }, 403);
+        }
+        controllers[side] = { ...ctrl, userId: user.id };
+      }
+    }
+  }
+
   const config = await loadGameConfig();
   const session = createBattleSession({
     config,
     teamA: body.teamA,
     teamB: body.teamB,
-    controllers: { A: body.controllers.A, B: body.controllers.B },
+    controllers,
     seed: body.seed,
     ttlSec: body.ttlSec,
+    humanTurnTimeoutSec: body.humanTurnTimeoutSec,
+    clientChannel,
   });
   await kickAiIfNeeded({ config, sessionId: session.sessionId });
   const latest = await getBattleSession(session.sessionId);
   return c.json({ ok: true, session: latest ?? session });
+});
+
+app.patch("/battle/session/:sessionId/lineup", async (c) => {
+  const user = await optionalSessionUser(c);
+  if (!user) {
+    return c.json({ ok: false, error: "pvp_login_required" }, 401);
+  }
+  const sessionId = c.req.param("sessionId");
+  const body = await c.req.json<{
+    side?: "A" | "B";
+    team?: [string, string, string];
+    expectedStateVersion?: number;
+  }>();
+  if (
+    (body.side !== "A" && body.side !== "B") ||
+    !body.team ||
+    typeof body.expectedStateVersion !== "number"
+  ) {
+    return c.json({ ok: false, error: "invalid_lineup_payload" }, 400);
+  }
+  const config = await loadGameConfig();
+  const result = await setPvpLineup({
+    config,
+    sessionId,
+    side: body.side,
+    team: body.team,
+    userId: user.id,
+    expectedStateVersion: body.expectedStateVersion,
+  });
+  if (!result.ok) {
+    const status =
+      result.code === "forbidden"
+        ? 403
+        : result.code === "version_conflict"
+          ? 409
+          : result.code === "invalid_team"
+            ? 400
+            : 404;
+    return c.json({ ok: false, error: result.code }, status as 400 | 403 | 404 | 409);
+  }
+  const latest = await getBattleSession(sessionId);
+  return c.json({ ok: true, session: latest ?? result.session });
+});
+
+app.post("/battle/session/:sessionId/ready", async (c) => {
+  const user = await optionalSessionUser(c);
+  if (!user) {
+    return c.json({ ok: false, error: "pvp_login_required" }, 401);
+  }
+  const sessionId = c.req.param("sessionId");
+  const body = await c.req.json<{
+    side?: "A" | "B";
+    expectedStateVersion?: number;
+  }>();
+  if (
+    (body.side !== "A" && body.side !== "B") ||
+    typeof body.expectedStateVersion !== "number"
+  ) {
+    return c.json({ ok: false, error: "invalid_ready_payload" }, 400);
+  }
+  const config = await loadGameConfig();
+  const result = await setPvpReady({
+    config,
+    sessionId,
+    side: body.side,
+    userId: user.id,
+    expectedStateVersion: body.expectedStateVersion,
+  });
+  if (!result.ok) {
+    const status =
+      result.code === "forbidden"
+        ? 403
+        : result.code === "version_conflict"
+          ? 409
+          : result.code === "lineup_required"
+            ? 400
+            : 404;
+    return c.json({ ok: false, error: result.code }, status as 400 | 403 | 404 | 409);
+  }
+  const latest = await getBattleSession(sessionId);
+  return c.json({ ok: true, session: latest ?? result.session });
+});
+
+app.post("/battle/session/:sessionId/start", async (c) => {
+  const user = await optionalSessionUser(c);
+  if (!user) {
+    return c.json({ ok: false, error: "pvp_login_required" }, 401);
+  }
+  const sessionId = c.req.param("sessionId");
+  const body = await c.req.json<{ expectedStateVersion?: number }>();
+  if (typeof body.expectedStateVersion !== "number") {
+    return c.json({ ok: false, error: "invalid_start_payload" }, 400);
+  }
+  const config = await loadGameConfig();
+  const result = await startPvpBattle({
+    config,
+    sessionId,
+    userId: user.id,
+    expectedStateVersion: body.expectedStateVersion,
+  });
+  if (!result.ok) {
+    const status =
+      result.code === "forbidden"
+        ? 403
+        : result.code === "version_conflict"
+          ? 409
+          : result.code === "not_ready" || result.code === "lineup_incomplete"
+            ? 400
+            : 404;
+    return c.json({ ok: false, error: result.code }, status as 400 | 403 | 404 | 409);
+  }
+  await kickAiIfNeeded({ config, sessionId });
+  const latest = await getBattleSession(sessionId);
+  return c.json({ ok: true, session: latest ?? result.session });
+});
+
+app.post("/battle/session/:sessionId/rematch", async (c) => {
+  const user = await optionalSessionUser(c);
+  if (!user) {
+    return c.json({ ok: false, error: "pvp_login_required" }, 401);
+  }
+  const sessionId = c.req.param("sessionId");
+  const body = await c.req.json<{ expectedStateVersion?: number }>();
+  if (typeof body.expectedStateVersion !== "number") {
+    return c.json({ ok: false, error: "invalid_rematch_payload" }, 400);
+  }
+  const result = await resetPvpSessionToLobby({
+    sessionId,
+    userId: user.id,
+    expectedStateVersion: body.expectedStateVersion,
+  });
+  if (!result.ok) {
+    const status =
+      result.code === "forbidden"
+        ? 403
+        : result.code === "version_conflict"
+          ? 409
+          : result.code === "not_battle_ended"
+            ? 400
+            : 404;
+    return c.json({ ok: false, error: result.code }, status as 400 | 403 | 404 | 409);
+  }
+  const latest = await getBattleSession(sessionId);
+  return c.json({ ok: true, session: latest ?? result.session });
 });
 
 app.get("/battle/session/:sessionId", async (c) => {
@@ -647,6 +936,7 @@ app.get("/battle/session/:sessionId", async (c) => {
 });
 
 app.post("/battle/session/submit", async (c) => {
+  const user = await optionalSessionUser(c);
   const body = await c.req.json<{
     sessionId?: string;
     side?: "A" | "B";
@@ -662,6 +952,13 @@ app.post("/battle/session/submit", async (c) => {
   ) {
     return c.json({ ok: false, error: "invalid_submit_payload" }, 400);
   }
+  if (user && body.userId && body.userId !== user.id) {
+    return c.json({ ok: false, error: "user_id_mismatch" }, 403);
+  }
+  const effectiveUserId = user?.id ?? body.userId;
+  if (!effectiveUserId) {
+    return c.json({ ok: false, error: "user_id_required" }, 400);
+  }
   const config = await loadGameConfig();
   const result = await submitBattleAction({
     config,
@@ -669,18 +966,35 @@ app.post("/battle/session/submit", async (c) => {
     side: body.side,
     action: body.action,
     expectedStateVersion: body.expectedStateVersion,
-    userId: body.userId,
+    userId: effectiveUserId,
   });
   if (!result.ok) {
     const status =
       result.code === "forbidden"
         ? 403
-        : result.code === "finished" || result.code === "version_conflict"
+        : result.code === "finished" ||
+            result.code === "version_conflict" ||
+            result.code === "lobby_not_started"
           ? 409
           : 404;
     return c.json({ ok: false, error: result.code }, status as 403 | 404 | 409);
   }
   return c.json({ ok: true, session: result.session });
+});
+
+app.get("/game/unlock-links", async (c) => {
+  const config = await loadGameConfig();
+  return c.json({ ok: true, unlockLinks: config.unlockLinks });
+});
+
+app.get("/game/catalog", async (c) => {
+  const config = await loadGameConfig();
+  return c.json({
+    ok: true,
+    pets: config.pets,
+    skills: config.skills,
+    comboSkills: config.comboSkills,
+  });
 });
 
 app.get("/graph/player/:playerId/pets", async (c) => {
@@ -701,6 +1015,20 @@ app.get("/graph/counter/:attacker/:defender", async (c) => {
   const defender = c.req.param("defender");
   const multiplier = await getCounterMultiplier(attacker, defender);
   return c.json({ attacker, defender, multiplier });
+});
+
+/** 天梯榜（Neo4j `Player.eloRating`，PvP 结束时更新；默认 1500） */
+app.get("/graph/ladder", async (c) => {
+  const limit = Number(c.req.query("limit") ?? "20");
+  const rows = await getLadderLeaderboard(Number.isFinite(limit) ? limit : 20);
+  return c.json({ ok: true, rows });
+});
+
+app.get("/graph/ladder/player/:playerId", async (c) => {
+  const playerId = c.req.param("playerId");
+  const rank = await getPlayerLadderRank(playerId);
+  if (!rank) return c.json({ ok: false, error: "neo4j_unavailable" }, 503);
+  return c.json({ ok: true, playerId, ...rank });
 });
 
 const port = Number(process.env.PORT ?? 3000);

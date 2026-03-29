@@ -12,7 +12,7 @@
     "channel:demo": "node --import tsx src/scripts/channel-sign-demo.ts",
     "llm:smoke": "node --import tsx src/scripts/llm-smoke.ts",
     "test:engine": "node --import tsx --test src/game/engine.test.ts",
-    "test:core": "node --import tsx --test src/env.test.ts src/game/engine.test.ts src/utils/retry.test.ts src/ai/providers/openaiCompatibleAdapter.test.ts src/ai/battle/legalActions.test.ts src/ai/battle/langgraphAgent.test.ts src/ai/battle/promptProtocol.test.ts src/ai/commentary/battleCommentary.test.ts src/ai/recommend/vectorAdvisor.test.ts src/ai/nl/allowlistQuery.test.ts src/battle/sessionService.test.ts"
+    "test:core": "node --import tsx --test src/env.test.ts src/game/engine.test.ts src/game/elo.test.ts src/utils/retry.test.ts src/ai/providers/openaiCompatibleAdapter.test.ts src/ai/battle/legalActions.test.ts src/ai/battle/langgraphAgent.test.ts src/ai/battle/promptProtocol.test.ts src/ai/commentary/battleCommentary.test.ts src/ai/recommend/vectorAdvisor.test.ts src/ai/phase4bAcceptance.test.ts src/ai/nl/allowlistQuery.test.ts src/battle/sessionService.test.ts src/neo4j/phase6TasksAcceptance.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",

@@ -144,6 +144,11 @@ export function getLlmConfigCenter(): {
   };
 }
 
+/** When false, `/skill/v1` is not mounted (automation / Skill HTTP surface). */
+export function isSkillLayerEnabled(): boolean {
+  return (process.env.SKILL_LAYER_ENABLED ?? "true").toLowerCase() !== "false";
+}
+
 export function getChannelAuthConfig(): {
   openclawSecret: string;
   doubaoSecret: string;
@@ -160,4 +165,16 @@ export function getCommentaryConfig(): {
   const enabled = (process.env.COMMENTARY_ENABLED ?? "false").toLowerCase() === "true";
   const maxTokens = Number(process.env.COMMENTARY_MAX_TOKENS ?? 96);
   return { enabled, maxTokens };
+}
+
+export function getBattleHumanTurnConfig(): {
+  humanTurnTimeoutSec: number;
+  autopilotDifficulty: "easy" | "medium" | "hard";
+} {
+  const raw = Number(process.env.BATTLE_HUMAN_TURN_TIMEOUT_SEC ?? 120);
+  const humanTurnTimeoutSec = Number.isFinite(raw) && raw >= 0 ? raw : 120;
+  const d = (process.env.BATTLE_AUTOPILOT_DIFFICULTY ?? "medium").toLowerCase();
+  const autopilotDifficulty: "easy" | "medium" | "hard" =
+    d === "easy" || d === "hard" ? d : "medium";
+  return { humanTurnTimeoutSec, autopilotDifficulty };
 }
