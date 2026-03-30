@@ -30,6 +30,7 @@ export type GameConfigJson = {
     isAoe: boolean;
   }>;
   unlockLinks: Array<{ fromPetId: string; toPetId: string }>;
+  battleRules: Record<string, unknown>;
 };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

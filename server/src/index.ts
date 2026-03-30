@@ -991,9 +991,14 @@ app.get("/game/catalog", async (c) => {
   const config = await loadGameConfig();
   return c.json({
     ok: true,
+    version: config.version,
+    gameTitle: config.gameTitle,
     pets: config.pets,
     skills: config.skills,
     comboSkills: config.comboSkills,
+    attributes: config.attributes,
+    counters: config.counters,
+    battleRules: config.battleRules,
   });
 });
 

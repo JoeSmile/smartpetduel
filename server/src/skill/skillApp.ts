@@ -132,7 +132,11 @@ const SKILL_DISCOVERY = {
     { method: "POST", path: "/skill/v1/battle/session/submit", note: "submit action" },
     { method: "POST", path: "/skill/v1/ai/battle/legal-actions", note: "legal moves" },
     { method: "POST", path: "/skill/v1/ai/battle/next-action", note: "AI suggestion" },
-    { method: "GET", path: "/skill/v1/game/catalog", note: "pets/skills config" },
+    {
+      method: "GET",
+      path: "/skill/v1/game/catalog",
+      note: "pets, skills, comboSkills, attributes, counters, battleRules",
+    },
     { method: "GET", path: "/skill/v1/game/unlock-links", note: "unlock links" },
     {
       method: "GET",
@@ -563,9 +567,14 @@ export function createSkillApp(): Hono {
     const config = await loadGameConfig();
     return c.json({
       ok: true,
+      version: config.version,
+      gameTitle: config.gameTitle,
       pets: config.pets,
       skills: config.skills,
       comboSkills: config.comboSkills,
+      attributes: config.attributes,
+      counters: config.counters,
+      battleRules: config.battleRules,
     });
   });
 

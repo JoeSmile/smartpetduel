@@ -1,0 +1,25 @@
+---
+description: >-
+  Smart Pet Duel: user-facing battle text uses pet-action narration; raw terminal
+  only when debugging or explicitly requested.
+alwaysApply: true
+---
+
+# Smart Pet Duel — 输出策略（终端 vs 对话）
+
+## 向用户说明对战过程时（默认）
+
+不要堆叠引擎原始字段、JSON、`SKILL_…` 技术 id 长串或整块 ASCII 战报，除非用户明确要求「原文 / 完整日志 / 调试」。
+
+**用自然句只写宠物行动**，一句一事，中文示例：
+
+- 「**炎绒狐** 使用 **火球** 攻击了 **叶绒鹿**，造成 **30** 点伤害。」
+- 「**幽紫水母** 使用 **毒刺** 攻击了 **沧澜龟**，造成 **23** 点伤害（暴击）。」
+- 换人：「**炎绒狐** 下场，**沧澜龟** 上场。」
+- 击倒 / 结束：「**叶绒鹿** 被击倒。」「战斗结束，**A** 方获胜。」
+
+技能显示 **catalog 里的中文技能名**（`GET /skill/v1/game/catalog` 的 `skills`），宠物显示 **catalog 里的宠物名**（`pets`）。`damage` 类事件里的 `actionId` 对应技能或连招 id，可查表换名。
+
+## 何时贴完整终端输出
+
+仅在用户**明确要求**完整脚本输出、调试、或需要与终端逐行对照时，再把 `pnpm exec tsx …` / `curl` 的 **stdout 全文**贴出；若过长被截断，说明并建议本机终端或 `tee` 保存。

@@ -68,6 +68,36 @@
     { "id": "COMBO_GRASS_01", "petAId": "PET_GRASS_01", "petBId": "PET_GRASS_03", "name": "森林守护", "coefficient": 0, "isAoe": false },
     { "id": "COMBO_LIGHTNING_01", "petAId": "PET_SPECIAL_01", "petBId": "PET_SPECIAL_02", "name": "雷霆风暴", "coefficient": 1.7, "isAoe": true }
   ],
+  "battleRules": {
+    "rulesetId": "spd_ruleset_v1",
+    "teamSize": 3,
+    "distinctPetIdsPerTeam": true,
+    "counterMultiplierDefault": 1.0,
+    "counterLookup": "For damage, multiplier is from counters[] where from=attackerPet.attribute and to=defenderPet.attribute; if no row, use counterMultiplierDefault.",
+    "firstSideEachRound": "random_50_50",
+    "actionTypes": ["skill", "combo", "switch"],
+    "skill": {
+      "cooldownRoundsDefault": 0,
+      "note": "Per-skill cooldown can be set via normalSkillCooldownById in battle state; ready round = currentRound + cooldown + 1 after use."
+    },
+    "combo": {
+      "minBondLevelForPetPair": 3,
+      "cooldownRoundsAfterUse": 3,
+      "maxUsesPerComboIdPerBattle": 2,
+      "note": "Active pet must match combo petAId; partner petBId must be alive on same team; bond is tracked per unordered pair."
+    },
+    "aoeCombo": {
+      "benchSplashRatio": 0.3,
+      "benchMinHpAfterSplash": 1,
+      "note": "Splash hits bench defenders; splash cannot KO a bench pet (HP floored at 1)."
+    },
+    "battleParamsDefaults": {
+      "bondDamageBonusPerLevel": 0.03,
+      "bondCritRatePerLevel": 0.02,
+      "critMultiplier": 1.5
+    },
+    "winCondition": "When a side has no alive pets remaining, the other side wins."
+  },
   "unlockLinks": [
     { "fromPetId": "PET_FIRE_01", "toPetId": "PET_FIRE_02" },
     { "fromPetId": "PET_WATER_01", "toPetId": "PET_WATER_03" },
